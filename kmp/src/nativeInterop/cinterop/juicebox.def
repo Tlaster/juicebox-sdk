@@ -1,0 +1,2 @@
+headers = juicebox-sdk-ffi.h
+package = xyz.juicebox.sdk.ffi

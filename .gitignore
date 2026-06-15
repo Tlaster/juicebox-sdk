@@ -4,3 +4,4 @@
 /swift/.build
 /swift/.swiftpm
 /target
+/artifacts/jni-host

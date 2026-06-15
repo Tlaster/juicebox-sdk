@@ -159,7 +159,9 @@ class Client private constructor (
                         )
 
                         request.headers?.forEach {
-                            urlConnection.setRequestProperty(it.name, it.value)
+                            it?.let { header ->
+                                urlConnection.setRequestProperty(header.name, header.value)
+                            }
                         }
 
                         urlConnection.doInput = true

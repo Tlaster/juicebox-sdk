@@ -2,7 +2,7 @@
 
 An interface for the Juicebox Protocol which provides distributed storage and recovery of secrets using simple PIN authentication.
 
-This interface is implemented in [Rust](rust/sdk/README.md), but is also bridged to support [Swift](swift/README.md), [Android](android/README.md), and [JavaScript](javascript/README.md).
+This interface is implemented in [Rust](rust/sdk/README.md), but is also bridged to support [Swift](swift/README.md), [Android](android/README.md), and [JavaScript](javascript/README.md). A Kotlin Multiplatform facade is available in [kmp](kmp/README.md).
 
 For a more in-depth explanation of the protocol – including the motivations behind it – read the [blog post](https://www.juicebox.xyz/blog/key-to-simplicity-squeezing-the-hassle-out-of-encryption-key-recovery) or [whitepaper](https://juicebox.xyz/assets/whitepapers/juiceboxprotocol_revision7_20230807.pdf).
 

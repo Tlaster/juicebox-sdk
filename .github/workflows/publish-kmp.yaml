@@ -1,0 +1,150 @@
+name: Publish KMP
+
+on:
+  workflow_dispatch:
+    inputs:
+      publishType:
+        description: Publish a snapshot or a release.
+        required: true
+        default: snapshot
+        type: choice
+        options:
+          - snapshot
+          - release
+      version:
+        description: Version to publish. Snapshot versions may omit the -SNAPSHOT suffix.
+        required: true
+        default: 0.3.6-SNAPSHOT
+      juiceboxWasmVersion:
+        description: Version of the juicebox-sdk npm package used by the wasm target. Defaults to the release part of version.
+        required: false
+        default: ""
+  push:
+    branches:
+      - main
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+*"
+      - "[0-9]+.[0-9]+.[0-9]+*"
+
+permissions:
+  contents: read
+
+env:
+  DEFAULT_SNAPSHOT_VERSION: 0.3.6-SNAPSHOT
+
+jobs:
+  publish:
+    name: Publish KMP
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+          cache: gradle
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Resolve publish parameters
+        id: publish
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "${GITHUB_EVENT_NAME}" == "push" && "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            PUBLISH_TYPE="release"
+            VERSION="${GITHUB_REF_NAME#v}"
+            WASM_VERSION=""
+          elif [[ "${GITHUB_EVENT_NAME}" == "push" ]]; then
+            PUBLISH_TYPE="snapshot"
+            VERSION="${DEFAULT_SNAPSHOT_VERSION}"
+            WASM_VERSION=""
+          else
+            PUBLISH_TYPE="${{ inputs.publishType }}"
+            VERSION="${{ inputs.version }}"
+            WASM_VERSION="${{ inputs.juiceboxWasmVersion }}"
+          fi
+
+          if [[ -z "${VERSION}" ]]; then
+            echo "version must not be empty" >&2
+            exit 1
+          fi
+
+          case "${PUBLISH_TYPE}" in
+            snapshot)
+              if [[ "${VERSION}" != *-SNAPSHOT ]]; then
+                VERSION="${VERSION}-SNAPSHOT"
+              fi
+              REPOSITORY_URL="https://central.sonatype.com/repository/maven-snapshots/"
+              ;;
+            release)
+              if [[ "${VERSION}" == *-SNAPSHOT ]]; then
+                echo "release version must not end with -SNAPSHOT: ${VERSION}" >&2
+                exit 1
+              fi
+              REPOSITORY_URL="https://ossrh-staging-api.central.sonatype.com/service/local/staging/deploy/maven2/"
+              ;;
+            *)
+              echo "unknown publishType: ${PUBLISH_TYPE}" >&2
+              exit 1
+              ;;
+          esac
+
+          if [[ -z "${WASM_VERSION}" ]]; then
+            WASM_VERSION="${VERSION%-SNAPSHOT}"
+          fi
+
+          echo "publish_type=${PUBLISH_TYPE}" >> "${GITHUB_OUTPUT}"
+          echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
+          echo "repository_url=${REPOSITORY_URL}" >> "${GITHUB_OUTPUT}"
+          echo "wasm_version=${WASM_VERSION}" >> "${GITHUB_OUTPUT}"
+
+      - name: Validate secrets
+        shell: bash
+        env:
+          OSSRH_USERNAME: ${{ secrets.OSSRH_USERNAME }}
+          OSSRH_PASSWORD: ${{ secrets.OSSRH_PASSWORD }}
+          SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
+          SIGNING_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
+          PUBLISH_TYPE: ${{ steps.publish.outputs.publish_type }}
+        run: |
+          set -euo pipefail
+
+          for name in OSSRH_USERNAME OSSRH_PASSWORD; do
+            if [[ -z "${!name}" ]]; then
+              echo "Missing required secret: ${name}" >&2
+              exit 1
+            fi
+          done
+
+          if [[ "${PUBLISH_TYPE}" == "release" ]]; then
+            for name in SIGNING_KEY SIGNING_PASSWORD; do
+              if [[ -z "${!name}" ]]; then
+                echo "Missing required release secret: ${name}" >&2
+                exit 1
+              fi
+            done
+          fi
+
+      - name: Publish
+        working-directory: kmp
+        env:
+          ORG_GRADLE_PROJECT_ossrhUsername: ${{ secrets.OSSRH_USERNAME }}
+          ORG_GRADLE_PROJECT_ossrhPassword: ${{ secrets.OSSRH_PASSWORD }}
+          ORG_GRADLE_PROJECT_signingKey: ${{ secrets.SIGNING_KEY }}
+          ORG_GRADLE_PROJECT_signingPassword: ${{ secrets.SIGNING_PASSWORD }}
+        run: >-
+          ../android/gradlew publish
+          --no-daemon
+          --stacktrace
+          -PgroupId=moe.tlaster
+          -PversionString="${{ steps.publish.outputs.version }}"
+          -PossrhRepo="${{ steps.publish.outputs.repository_url }}"
+          -PjuiceboxWasmVersion="${{ steps.publish.outputs.wasm_version }}"
