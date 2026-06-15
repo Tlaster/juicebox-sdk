@@ -303,8 +303,20 @@ pub unsafe extern "C" fn Java_xyz_juicebox_sdk_internal_Native_httpClientRequest
     let http_client = http_client as *const HttpClient;
 
     let id = get_byte_array(&mut env, &response, "id").expect("id should not be null");
+    let id: [u8; 16] = id.try_into().expect("id should be 16 bytes");
     let status_code = get_short(&mut env, &response, "statusCode");
+
+    if status_code < 0 {
+        (*http_client).receive(id, None);
+        return;
+    }
+
+    let status_code: u16 = status_code
+        .try_into()
+        .expect("non-negative status code should fit u16");
     let body = get_byte_array(&mut env, &response, "body").expect("body should not be null");
+
+    let mut headers = HashMap::new();
 
     let java_headers: JObjectArray = env
         .get_field(
@@ -318,8 +330,6 @@ pub unsafe extern "C" fn Java_xyz_juicebox_sdk_internal_Native_httpClientRequest
         .into();
 
     let java_headers_length = env.get_array_length(&java_headers).unwrap();
-
-    let mut headers = HashMap::new();
 
     for index in 0..java_headers_length {
         let java_header = env.get_object_array_element(&java_headers, index).unwrap();
@@ -336,7 +346,7 @@ pub unsafe extern "C" fn Java_xyz_juicebox_sdk_internal_Native_httpClientRequest
         body,
     };
 
-    (*http_client).receive(id.try_into().unwrap(), Some(response));
+    (*http_client).receive(id, Some(response));
 }
 
 fn get_string(env: &mut JNIEnv, obj: &JObject, name: &str) -> String {
@@ -362,12 +372,10 @@ fn get_byte_array(env: &mut JNIEnv, obj: &JObject, name: &str) -> Option<Vec<u8>
     Some(env.convert_byte_array(jbytearray).unwrap())
 }
 
-fn get_short(env: &mut JNIEnv, obj: &JObject, name: &str) -> u16 {
+fn get_short(env: &mut JNIEnv, obj: &JObject, name: &str) -> jshort {
     env.get_field(obj, name, JNI_SHORT_TYPE)
         .unwrap()
         .s()
-        .unwrap()
-        .try_into()
         .unwrap()
 }
 

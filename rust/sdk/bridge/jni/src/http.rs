@@ -33,6 +33,14 @@ impl HttpClient {
         }
     }
 
+    fn remove(&self, request_id: &[u8; 16]) {
+        let tx = {
+            let mut locked = self.request_map.lock().unwrap();
+            locked.remove(request_id)
+        };
+        drop(tx);
+    }
+
     pub fn receive(&self, response_id: [u8; 16], response: Option<sdk::http::Response>) {
         let tx = {
             let mut locked = self.request_map.lock().unwrap();
@@ -115,7 +123,7 @@ impl sdk::http::Client for HttpClient {
                 .unwrap();
             }
 
-            env.call_method(
+            let send_result = env.call_method(
                 &self.send_function,
                 "send",
                 jni_signature!((JNI_LONG_TYPE, jni_object!(JUICEBOX_JNI_HTTP_REQUEST_TYPE)) => JNI_VOID_TYPE),
@@ -123,11 +131,15 @@ impl sdk::http::Client for HttpClient {
                     (self as *const HttpClient as jlong).into(),
                     JValue::Object(&java_request),
                 ],
-            )
-            .unwrap();
+            );
+
+            if send_result.is_err() {
+                self.remove(&id);
+                return None;
+            }
         }
 
-        rx.await.unwrap()
+        rx.await.unwrap_or(None)
     }
 }
 
