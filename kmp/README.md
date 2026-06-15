@@ -10,9 +10,9 @@ existing Android/JNI wrapper and packages the same JNI libraries from
 Supported targets today:
 
 - Android: functional, backed by the existing Android SDK wrapper.
-- JVM: functional via the existing Rust JNI bridge. Build the host JNI library
-  with `./jvm-jni.sh`, then run with
-  `-Djava.library.path=../artifacts/jni-host`.
+- JVM: functional via the existing Rust JNI bridge. Published artifacts bundle
+  JNI libraries under `juicebox/native`; local builds can populate them with
+  `./jvm-jni.sh` and still fall back to `-Djava.library.path=../artifacts/jni-host`.
 - iOS/macOS: functional through Kotlin/Native cinterop over the existing Rust
   FFI bridge. Build the matching static libraries with `./native-ffi.sh`.
 - wasmJs: functional through Kotlin/Wasm JS interop over the existing

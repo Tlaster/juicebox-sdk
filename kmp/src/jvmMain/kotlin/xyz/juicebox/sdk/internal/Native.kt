@@ -1,5 +1,9 @@
 package xyz.juicebox.sdk.internal
 
+import java.io.IOException
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
+import java.util.Locale
 import xyz.juicebox.sdk.DeleteException
 import xyz.juicebox.sdk.PinHashingMode
 import xyz.juicebox.sdk.Realm
@@ -10,7 +14,7 @@ import xyz.juicebox.sdk.RegisterException
 public class Native private constructor() {
     public companion object {
         init {
-            System.loadLibrary("juicebox_sdk_jni")
+            NativeLibraryLoader.load()
         }
 
         @JvmStatic
@@ -139,4 +143,74 @@ public class Native private constructor() {
             realmId: RealmId,
         )
     }
+}
+
+private object NativeLibraryLoader {
+    private const val libraryName = "juicebox_sdk_jni"
+    private const val resourceRoot = "/juicebox/native"
+
+    fun load() {
+        val osName = normalizedOsName()
+        val archName = normalizedArchName()
+        val mappedLibraryName = System.mapLibraryName(libraryName)
+        val resourcePath = "$resourceRoot/$osName-$archName/$mappedLibraryName"
+
+        val input = NativeLibraryLoader::class.java.getResourceAsStream(resourcePath)
+        if (input == null) {
+            loadFromLibraryPath(resourcePath)
+            return
+        }
+
+        try {
+            input.use { stream ->
+                val tempDir = Files.createTempDirectory("juicebox-sdk-jni-")
+                val tempFile = tempDir.resolve(mappedLibraryName)
+                Files.copy(stream, tempFile, StandardCopyOption.REPLACE_EXISTING)
+                tempDir.toFile().deleteOnExit()
+                tempFile.toFile().deleteOnExit()
+                System.load(tempFile.toAbsolutePath().toString())
+            }
+        } catch (cause: IOException) {
+            throw UnsatisfiedLinkError(
+                "Failed to extract Juicebox JNI library from bundled resource $resourcePath.",
+            ).apply { initCause(cause) }
+        }
+    }
+
+    private fun loadFromLibraryPath(resourcePath: String) {
+        try {
+            System.loadLibrary(libraryName)
+        } catch (cause: UnsatisfiedLinkError) {
+            throw UnsatisfiedLinkError(
+                "Could not load Juicebox JNI library. Expected bundled resource $resourcePath " +
+                    "or native library $libraryName on java.library.path=" +
+                    System.getProperty("java.library.path"),
+            ).apply { initCause(cause) }
+        }
+    }
+
+    private fun normalizedOsName(): String =
+        when {
+            osName().contains("mac") || osName().contains("darwin") -> "macos"
+            osName().contains("linux") -> "linux"
+            osName().contains("windows") -> "windows"
+            else -> sanitize(System.getProperty("os.name"))
+        }
+
+    private fun normalizedArchName(): String =
+        when (val arch = System.getProperty("os.arch").lowercase(Locale.US)) {
+            "aarch64", "arm64" -> "aarch64"
+            "x86_64", "amd64" -> "x86_64"
+            "x86", "i386", "i686" -> "x86"
+            else -> sanitize(arch)
+        }
+
+    private fun osName(): String =
+        System.getProperty("os.name").lowercase(Locale.US)
+
+    private fun sanitize(value: String): String =
+        value
+            .lowercase(Locale.US)
+            .replace(Regex("[^a-z0-9]+"), "_")
+            .trim('_')
 }

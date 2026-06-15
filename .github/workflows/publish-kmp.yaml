@@ -33,9 +33,57 @@ env:
   DEFAULT_SNAPSHOT_VERSION: 0.3.6-SNAPSHOT
 
 jobs:
+  jvm-native:
+    name: Build JVM JNI (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS
+            os: macos-latest
+            cargo-targets: aarch64-apple-darwin x86_64-apple-darwin
+          - name: Linux
+            os: ubuntu-22.04
+            cargo-targets: x86_64-unknown-linux-gnu
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Install Rust targets
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup target add ${{ matrix.cargo-targets }}
+
+      - name: Build JVM JNI libraries
+        shell: bash
+        run: |
+          set -euo pipefail
+          for target in ${{ matrix.cargo-targets }}; do
+            ./kmp/jvm-jni.sh --target "${target}"
+          done
+
+      - name: Upload JVM JNI libraries
+        uses: actions/upload-artifact@v4
+        with:
+          name: jvm-jni-${{ matrix.name }}
+          path: artifacts/jni-host/juicebox/native
+          if-no-files-found: error
+
   publish:
     name: Publish KMP
     runs-on: macos-latest
+    needs: jvm-native
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
@@ -132,6 +180,13 @@ jobs:
               fi
             done
           fi
+
+      - name: Download JVM JNI libraries
+        uses: actions/download-artifact@v4
+        with:
+          pattern: jvm-jni-*
+          path: artifacts/jni-host/juicebox/native
+          merge-multiple: true
 
       - name: Publish
         working-directory: kmp

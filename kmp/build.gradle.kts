@@ -53,6 +53,8 @@ val nativeCargoTargets =
         "linuxX64" to "x86_64-unknown-linux-gnu",
     )
 
+val jvmJniResourcesDir = layout.projectDirectory.dir("../artifacts/jni-host")
+
 kotlin {
     jvmToolchain(17)
 
@@ -117,6 +119,8 @@ kotlin {
         jvmMain {
             kotlin.srcDir("../android/src/main/kotlin")
             kotlin.exclude("xyz/juicebox/sdk/Client.kt")
+            resources.srcDir(jvmJniResourcesDir)
+            resources.exclude("*.dylib", "*.so", "*.dll")
             dependencies {
                 implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
             }
